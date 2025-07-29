@@ -1,297 +1,208 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SSH 密钥生成器</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Custom styles for Inter font */
-        body {
-            font-family: 'Inter', sans-serif;
+import React, { useState, useEffect } from 'react';
+
+// Main App component
+const App = () => {
+    const [publicKey, setPublicKey] = useState('');
+    const [privateKey, setPrivateKey] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+    // State for custom filenames
+    const [publicFileName, setPublicFileName] = useState('id_rsa.pub');
+    const [privateFileName, setPrivateFileName] = useState('id_rsa');
+
+
+    // Function to generate SSH key pair using Web Cryptography API
+    const generateKeyPair = async () => {
+        setIsLoading(true);
+        setErrorMessage('');
+        setPublicKey('');
+        setPrivateKey('');
+
+        try {
+            // Generate an RSA key pair
+            const keyPair = await window.crypto.subtle.generateKey(
+                {
+                    name: "RSASSA-PKCS1-v1_5", // Algorithm name
+                    modulusLength: 2048,      // Key size (bits)
+                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
+                    hash: "SHA-256",          // Hash algorithm for signing
+                },
+                true, // Whether the key is extractable (i.e. can be used in exportKey)
+                ["sign", "verify"] // For what the key can be used
+            );
+
+            // Export the public key in SPKI format (SubjectPublicKeyInfo)
+            const exportedPublicKey = await window.crypto.subtle.exportKey(
+                "spki",
+                keyPair.publicKey
+            );
+
+            // Export the private key in PKCS#8 format
+            const exportedPrivateKey = await window.crypto.subtle.exportKey(
+                "pkcs8",
+                keyPair.privateKey
+            );
+
+            // Convert ArrayBuffer to Base64 string for display/download
+            const publicKeyBase64 = arrayBufferToBase64(exportedPublicKey);
+            const privateKeyBase64 = arrayBufferToBase64(exportedPrivateKey);
+
+            // Format as OpenSSH public key string
+            const formattedPublicKey = `ssh-rsa ${publicKeyBase64} generated-by-web-app`;
+            setPublicKey(formattedPublicKey);
+
+            // Format as OpenSSH private key string (PKCS#8 PEM)
+            // Note: For a true OpenSSH private key, you'd typically need to use a library
+            // like 'js-rsa' or a server-side process to convert PKCS#8 to OpenSSH format.
+            // This is a simplified PEM representation.
+            const formattedPrivateKey = `-----BEGIN RSA PRIVATE KEY-----\n${privateKeyBase64}\n-----END RSA PRIVATE KEY-----`;
+            setPrivateKey(formattedPrivateKey);
+
+        } catch (error) {
+            console.error("Error generating key pair:", error);
+            setErrorMessage("密钥生成失败: " + error.message);
+        } finally {
+            setIsLoading(false);
         }
-        /* Hide scrollbar for textareas, but allow scrolling */
-        textarea {
-            overflow: auto;
-            scrollbar-width: none; /* Firefox */
-            -ms-overflow-style: none;  /* IE and Edge */
+    };
+
+    // Helper function to convert ArrayBuffer to Base64
+    const arrayBufferToBase64 = (buffer) => {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
         }
-        textarea::-webkit-scrollbar {
-            display: none; /* Chrome, Safari, Opera */
-        }
-    </style>
-</head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
-    <div class="bg-white shadow-xl rounded-2xl p-8 w-full max-w-2xl">
-        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">SSH 密钥生成器</h1>
+        return window.btoa(binary);
+    };
 
-        <div class="space-y-6">
-            <!-- Key Type Selection -->
-            <div>
-                <label for="keyType" class="block text-lg font-medium text-gray-700 mb-2">选择密钥类型:</label>
-                <select id="keyType" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200">
-                    <option value="RSA">RSA</option>
-                    <option value="ED25519">ED25519</option>
-                </select>
-            </div>
+    // Function to download a file
+    const downloadFile = (content, filename, contentType) => {
+        const blob = new Blob([content], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url); // Clean up the URL object
+    };
 
-            <!-- RSA Key Size (conditionally displayed) -->
-            <div id="rsaKeySizeContainer" class="hidden">
-                <label for="rsaKeySize" class="block text-lg font-medium text-gray-700 mb-2">RSA 密钥长度 (位):</label>
-                <select id="rsaKeySize" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200">
-                    <option value="2048">2048</option>
-                    <option value="3072">3072</option>
-                    <option value="4096">4096</option>
-                </select>
-            </div>
+    // Effect to run on component mount (optional, if you want to generate on load)
+    useEffect(() => {
+        // You can choose to generate keys automatically on load or only on button click
+        // generateKeyPair();
+    }, []);
 
-            <!-- Generate Button -->
-            <button id="generateButton" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold text-lg shadow-md hover:bg-blue-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                生成 SSH 密钥对
-            </button>
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4 font-inter">
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all duration-300 hover:scale-105">
+                <h1 className="text-4xl font-extrabold text-center text-gray-800 mb-8">
+                    SSH 密钥生成器
+                </h1>
 
-            <!-- Loading Indicator -->
-            <div id="loadingIndicator" class="hidden text-center text-blue-600 font-medium">
-                <svg class="animate-spin inline-block w-6 h-6 mr-2 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                正在生成密钥...
-            </div>
+                <p className="text-gray-600 text-center mb-6">
+                    点击按钮生成新的SSH密钥对。请妥善保管您的私钥！
+                </p>
 
-            <!-- Error Message -->
-            <div id="errorMessage" class="hidden p-4 bg-red-100 text-red-700 rounded-lg text-sm">
-                <!-- Error message will be inserted here -->
-            </div>
+                {/* Filename input fields */}
+                <div className="mb-6 space-y-4">
+                    <div>
+                        <label htmlFor="publicFileName" className="block text-gray-700 text-sm font-semibold mb-1">
+                            公钥文件名:
+                        </label>
+                        <input
+                            type="text"
+                            id="publicFileName"
+                            value={publicFileName}
+                            onChange={(e) => setPublicFileName(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 transition-all duration-200"
+                            placeholder="例如: id_rsa.pub"
+                        />
+                    </div>
+                    <div>
+                        <label htmlFor="privateFileName" className="block text-gray-700 text-sm font-semibold mb-1">
+                            私钥文件名:
+                        </label>
+                        <input
+                            type="text"
+                            id="privateFileName"
+                            value={privateFileName}
+                            onChange={(e) => setPrivateFileName(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 transition-all duration-200"
+                            placeholder="例如: id_rsa"
+                        />
+                    </div>
+                </div>
 
-            <!-- Public Key Display -->
-            <div>
-                <label for="publicKey" class="block text-lg font-medium text-gray-700 mb-2">公钥 (Public Key):</label>
-                <textarea id="publicKey" rows="6" readonly class="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-800 text-sm focus:outline-none resize-none"></textarea>
-                <button id="copyPublicKey" class="mt-2 w-full bg-gray-200 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-300 transition-colors duration-200 shadow-sm disabled:opacity-50" disabled>
-                    复制公钥
+                <button
+                    onClick={generateKeyPair}
+                    disabled={isLoading}
+                    className="w-full bg-gradient-to-r from-green-500 to-teal-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:from-green-600 hover:to-teal-700 transition-all duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-green-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {isLoading ? '生成中...' : '生成新的 SSH 密钥对'}
                 </button>
-                <button id="downloadPublicKey" class="mt-2 w-full bg-green-500 text-white py-2 px-4 rounded-lg font-medium hover:bg-green-600 transition-colors duration-200 shadow-sm disabled:opacity-50" disabled>
-                    下载公钥
-                </button>
-            </div>
 
-            <!-- Private Key Display -->
-            <div>
-                <label for="privateKey" class="block text-lg font-medium text-gray-700 mb-2">私钥 (Private Key):</label>
-                <textarea id="privateKey" rows="10" readonly class="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-800 text-sm focus:outline-none resize-none"></textarea>
-                <button id="copyPrivateKey" class="mt-2 w-full bg-gray-200 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-300 transition-colors duration-200 shadow-sm disabled:opacity-50" disabled>
-                    复制私钥
-                </button>
-                <button id="downloadPrivateKey" class="mt-2 w-full bg-red-500 text-white py-2 px-4 rounded-lg font-medium hover:bg-red-600 transition-colors duration-200 shadow-sm disabled:opacity-50" disabled>
-                    下载私钥
-                </button>
+                {errorMessage && (
+                    <div className="mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
+                        <p className="font-semibold">错误:</p>
+                        <p>{errorMessage}</p>
+                        <p className="mt-2">请确保您的浏览器支持 Web Cryptography API。</p>
+                    </div>
+                )}
+
+                {publicKey && (
+                    <div className="mt-8 space-y-6">
+                        <div>
+                            <label htmlFor="publicKey" className="block text-gray-700 text-lg font-semibold mb-2">
+                                公钥:
+                            </label>
+                            <textarea
+                                id="publicKey"
+                                readOnly
+                                value={publicKey}
+                                className="w-full p-4 border border-gray-300 rounded-lg bg-gray-50 font-mono text-sm resize-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
+                                rows="6"
+                                onClick={(e) => e.target.select()} // Select all text on click
+                            ></textarea>
+                            <button
+                                onClick={() => downloadFile(publicKey, publicFileName, 'text/plain')}
+                                className="mt-3 w-full bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-md"
+                            >
+                                下载公钥 ({publicFileName})
+                            </button>
+                        </div>
+
+                        <div>
+                            <label htmlFor="privateKey" className="block text-gray-700 text-lg font-semibold mb-2">
+                                私钥:
+                            </label>
+                            <textarea
+                                id="privateKey"
+                                readOnly
+                                value={privateKey}
+                                className="w-full p-4 border border-gray-300 rounded-lg bg-gray-50 font-mono text-sm resize-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
+                                rows="10"
+                                onClick={(e) => e.target.select()} // Select all text on click
+                            ></textarea>
+                            <button
+                                onClick={() => downloadFile(privateKey, privateFileName, 'text/plain')}
+                                className="mt-3 w-full bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-md"
+                            >
+                                下载私钥 ({privateFileName})
+                            </button>
+                        </div>
+
+                        <p className="text-red-600 text-center text-sm font-medium mt-6">
+                            重要提示：私钥是敏感信息，请务必安全保存，不要泄露给任何人！
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
-    </div>
+    );
+};
 
-    <script>
-        // Get DOM elements
-        const keyTypeSelect = document.getElementById('keyType');
-        const rsaKeySizeContainer = document.getElementById('rsaKeySizeContainer');
-        const rsaKeySizeSelect = document.getElementById('rsaKeySize');
-        const generateButton = document.getElementById('generateButton');
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const errorMessageDiv = document.getElementById('errorMessage');
-        const publicKeyTextarea = document.getElementById('publicKey');
-        const privateKeyTextarea = document.getElementById('privateKey');
-        const copyPublicKeyButton = document.getElementById('copyPublicKey');
-        const copyPrivateKeyButton = document.getElementById('copyPrivateKey');
-        const downloadPublicKeyButton = document.getElementById('downloadPublicKey'); // New
-        const downloadPrivateKeyButton = document.getElementById('downloadPrivateKey'); // New
-
-        // Variable to store the current key type for file naming
-        let currentKeyType = 'RSA';
-
-        // Function to show/hide RSA key size based on key type selection
-        function toggleRsaKeySize() {
-            currentKeyType = keyTypeSelect.value; // Update current key type
-            if (currentKeyType === 'RSA') {
-                rsaKeySizeContainer.classList.remove('hidden');
-            } else {
-                rsaKeySizeContainer.classList.add('hidden');
-            }
-        }
-
-        // Initial call to set visibility
-        toggleRsaKeySize();
-        // Listen for changes in key type selection
-        keyTypeSelect.addEventListener('change', toggleRsaKeySize);
-
-        // Utility function to convert ArrayBuffer to base64 string
-        function arrayBufferToBase64(buffer) {
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return btoa(binary);
-        }
-
-        // Utility function to convert base64 to ArrayBuffer
-        function base64ToArrayBuffer(base64) {
-            const binary_string = window.atob(base64);
-            const len = binary_string.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binary_string.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-
-        // Function to convert exported key to PEM format
-        async function exportKeyToPem(key, type) {
-            const exported = await window.crypto.subtle.exportKey(
-                type === 'public' ? 'spki' : 'pkcs8', // SPKI for public, PKCS#8 for private
-                key
-            );
-            const base64 = arrayBufferToBase64(exported);
-            const header = type === 'public' ? 'PUBLIC KEY' : 'PRIVATE KEY';
-            let pem = `-----BEGIN ${header}-----\n`;
-            // Wrap base64 string at 64 characters per line
-            for (let i = 0; i < base64.length; i += 64) {
-                pem += base64.slice(i, i + 64) + '\n';
-            }
-            pem += `-----END ${header}-----\n`;
-            return pem;
-        }
-
-        // Main function to generate SSH keys
-        generateButton.addEventListener('click', async () => {
-            // Clear previous outputs and messages
-            publicKeyTextarea.value = '';
-            privateKeyTextarea.value = '';
-            errorMessageDiv.classList.add('hidden');
-            errorMessageDiv.textContent = '';
-            copyPublicKeyButton.disabled = true;
-            copyPrivateKeyButton.disabled = true;
-            downloadPublicKeyButton.disabled = true; // Disable download buttons
-            downloadPrivateKeyButton.disabled = true; // Disable download buttons
-            generateButton.disabled = true; // Disable button during generation
-            loadingIndicator.classList.remove('hidden'); // Show loading indicator
-
-            const keyType = keyTypeSelect.value;
-            let algorithmParams;
-
-            try {
-                if (keyType === 'RSA') {
-                    const keySize = parseInt(rsaKeySizeSelect.value, 10);
-                    algorithmParams = {
-                        name: "RSASSA-PKCS1-v1_5", // Algorithm for RSA signatures
-                        modulusLength: keySize,    // RSA key length
-                        publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
-                        hash: "SHA-256",           // Hash algorithm
-                    };
-                } else if (keyType === 'ED25519') {
-                    algorithmParams = {
-                        name: "Ed25519", // Algorithm for ED25519 signatures
-                    };
-                } else {
-                    throw new Error('不支持的密钥类型。');
-                }
-
-                // Generate the key pair
-                const keyPair = await window.crypto.subtle.generateKey(
-                    algorithmParams,
-                    true, // Extractable: true (so we can export it)
-                    ["sign", "verify"] // Key usages
-                );
-
-                // Export public and private keys to PEM format
-                const publicKeyPem = await exportKeyToPem(keyPair.publicKey, 'public');
-                const privateKeyPem = await exportKeyToPem(keyPair.privateKey, 'private');
-
-                // Display keys
-                publicKeyTextarea.value = publicKeyPem;
-                privateKeyTextarea.value = privateKeyPem;
-
-                // Enable copy and download buttons
-                copyPublicKeyButton.disabled = false;
-                copyPrivateKeyButton.disabled = false;
-                downloadPublicKeyButton.disabled = false; // Enable download buttons
-                downloadPrivateKeyButton.disabled = false; // Enable download buttons
-
-            } catch (error) {
-                console.error('密钥生成失败:', error);
-                errorMessageDiv.textContent = `密钥生成失败: ${error.message}`;
-                errorMessageDiv.classList.remove('hidden');
-            } finally {
-                loadingIndicator.classList.add('hidden'); // Hide loading indicator
-                generateButton.disabled = false; // Re-enable button
-            }
-        });
-
-        // Function to copy text to clipboard
-        function copyToClipboard(elementId) {
-            const textarea = document.getElementById(elementId);
-            textarea.select();
-            textarea.setSelectionRange(0, 99999); // For mobile devices
-            try {
-                document.execCommand('copy');
-                alertMessage('已复制到剪贴板！', 'success');
-            } catch (err) {
-                console.error('复制失败:', err);
-                alertMessage('复制失败，请手动复制。', 'error');
-            }
-        }
-
-        // Function to download text as a file
-        function downloadFile(content, filename) {
-            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a); // Append to body to make it clickable
-            a.click();
-            document.body.removeChild(a); // Clean up
-            URL.revokeObjectURL(url); // Release the object URL
-            alertMessage(`文件 "${filename}" 已下载！`, 'success');
-        }
-
-        // Custom alert message (instead of alert())
-        function alertMessage(message, type) {
-            const msgDiv = document.createElement('div');
-            msgDiv.textContent = message;
-            msgDiv.className = `fixed top-4 right-4 p-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform ${
-                type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-            } opacity-0 translate-y-[-20px]`;
-            document.body.appendChild(msgDiv);
-
-            // Animate in
-            setTimeout(() => {
-                msgDiv.classList.remove('opacity-0', 'translate-y-[-20px]');
-                msgDiv.classList.add('opacity-100', 'translate-y-0');
-            }, 10);
-
-            // Animate out and remove after a delay
-            setTimeout(() => {
-                msgDiv.classList.remove('opacity-100', 'translate-y-0');
-                msgDiv.classList.add('opacity-0', 'translate-y-[-20px]');
-                msgDiv.addEventListener('transitionend', () => msgDiv.remove(), { once: true });
-            }, 3000);
-        }
-
-        // Add event listeners for copy buttons
-        copyPublicKeyButton.addEventListener('click', () => copyToClipboard('publicKey'));
-        copyPrivateKeyButton.addEventListener('click', () => copyToClipboard('privateKey'));
-
-        // Add event listeners for new download buttons
-        downloadPublicKeyButton.addEventListener('click', () => {
-            const filename = currentKeyType === 'RSA' ? 'id_rsa.pub' : 'id_ed25519.pub';
-            downloadFile(publicKeyTextarea.value, filename);
-        });
-        downloadPrivateKeyButton.addEventListener('click', () => {
-            const filename = currentKeyType === 'RSA' ? 'id_rsa' : 'id_ed25519';
-            downloadFile(privateKeyTextarea.value, filename);
-        });
-    </script>
-</body>
-</html>
+export default App;
